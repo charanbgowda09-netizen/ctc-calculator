@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>CTC Break-up Calculator</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--tx:#1b1f24;--mu:#5d6773;--bd:#dde1e6;--ac:#1d5fd1;--acx:#fff;--ok:#117a3d;--bad:#b3261e;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#14171b;--card:#1d2127;--tx:#e8ebef;--mu:#9aa4b0;--bd:#323943;--ac:#5b93f0;--acx:#0b1220;--ok:#4cc27d;--bad:#ff8a80}}
+:root[data-theme="dark"]{--bg:#14171b;--card:#1d2127;--tx:#e8ebef;--mu:#9aa4b0;--bd:#323943;--ac:#5b93f0;--acx:#0b1220;--ok:#4cc27d;--bad:#ff8a80}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:980px;margin:0 auto;padding:16px}
+h1{font-size:20px;margin:4px 0 12px}
+.tabs{display:flex;gap:8px;margin-bottom:14px}
+.tabs button{flex:1;padding:10px;border:1px solid var(--bd);background:var(--card);color:var(--tx);border-radius:8px;font-weight:600;cursor:pointer}
+.tabs button.on{background:var(--ac);color:var(--acx);border-color:var(--ac)}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:14px;margin-bottom:14px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px}
+label{display:block;font-size:12px;color:var(--mu);margin-bottom:3px}
+input,select{width:100%;padding:9px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);font:inherit}
+button.p{background:var(--ac);color:var(--acx);border:0;padding:10px 16px;border-radius:8px;font-weight:600;cursor:pointer}
+button.s{background:transparent;color:var(--ac);border:1px solid var(--ac);padding:8px 12px;border-radius:8px;cursor:pointer}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:12px}
+table{width:100%;border-collapse:collapse}
+th,td{padding:7px 9px;border-bottom:1px solid var(--bd);text-align:right;white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+th{font-size:12px;color:var(--mu);font-weight:600}
+tr.t td{font-weight:700}
+.wrap{overflow-x:auto}
+.msg{padding:10px;border-radius:8px;border:1px solid var(--bd);margin-top:10px}
+.bad{color:var(--bad)}.ok{color:var(--ok)}.mu{color:var(--mu);font-size:13px}
+details{margin-top:10px}summary{cursor:pointer;color:var(--ac);font-size:13px}
+.hide{display:none}
+</style></head><body><main>
+<h1>CTC Break-up Calculator</h1>
+<div class="tabs"><button id="t1" class="on" onclick="tab(1)">Calculator</button><button id="t2" onclick="tab(2)">Employee Register (<span id="cnt">0</span>)</button></div>
+
+<section id="v1">
+<div class="card">
+<div class="grid">
+<div><label>Date</label><input type="date" id="date"></div>
+<div><label>Employee name</label><input id="name" placeholder="Full name"></div>
+<div><label>Designation</label><input id="desig"></div>
+<div><label>Location (state, for Professional Tax)</label><select id="loc"></select></div>
+<div><label>Date of joining</label><input type="date" id="doj"></div>
+<div><label>I know the…</label><select id="mode"><option value="net">Monthly net take-home</option><option value="ctc">Monthly CTC</option></select></div>
+<div><label>Amount (₹ per month)</label><input type="number" id="amt" min="0" inputmode="numeric" placeholder="e.g. 20000"></div>
+</div>
+<details><summary>Structure settings</summary>
+<div class="grid" style="margin-top:10px">
+<div><label>Basic % of CTC</label><input type="number" id="bp" value="50"></div>
+<div><label>HRA % of Basic</label><input type="number" id="hp" value="50"></div>
+<div><label>Bonus % of Basic</label><input type="number" id="bn" value="8.33" step="0.01"></div>
+<div><label>Insurance (₹/month, employer)</label><input type="number" id="ins" value="1137"></div>
+<div><label>PF on</label><select id="pfc"><option value="1">Basic capped at ₹25,000</option><option value="0">Actual Basic</option></select></div>
+<div><label>Professional Tax override (₹/month, blank = auto)</label><input type="number" id="ptov"></div>
+</div></details>
+<div class="row"><button class="p" onclick="run()">Calculate</button></div>
+<div id="out"></div>
+</div>
+</section>
+
+<section id="v2" class="hide">
+<div class="card">
+<div class="row" style="margin-top:0"><button class="s" onclick="copyTsv()">Copy for Excel</button><button class="s" id="clr" onclick="clearAll()">Clear register</button><span id="cm" class="mu"></span></div>
+<p class="mu">Rows are saved in this browser. Use “Copy for Excel”, then paste into a sheet at cell A1.</p>
+<div class="wrap"><table id="reg"></table></div>
+</div>
+</section>
+
+<script>
+var STATES=["Karnataka","Maharashtra","Telangana","Andhra Pradesh","Tamil Nadu","West Bengal","Gujarat","Delhi / Other (no PT)"];
+var cur=null,cands=[],reg=[];
+var $=function(i){return document.getElementById(i)};
+var fmt=function(n){return Math.round(n).toLocaleString("en-IN")};
+STATES.forEach(function(s){var o=document.createElement("option");o.textContent=s;$("loc").appendChild(o)});
+$("date").value=new Date().toISOString().slice(0,10);
+try{reg=JSON.parse(localStorage.getItem("ctcreg")||"[]")}catch(e){reg=[]}
+
+function pt(st,g){ // returns {m: monthly, a: annual}
+ var m=0,a;
+ if(st=="Karnataka"){if(g>=25000){m=200;a=2500}}
+ else if(st=="Maharashtra"){if(g>10000){m=200;a=2500}else if(g>7500){m=175;a=2100}}
+ else if(st=="Telangana"||st=="Andhra Pradesh"){if(g>20000)m=200;else if(g>15000)m=150}
+ else if(st=="Gujarat"){if(g>=12000)m=200;else if(g>=9000)m=150;else if(g>=6000)m=80}
+ else if(st=="West Bengal"){m=g<=10000?0:g<=15000?110:g<=25000?130:g<=40000?150:200}
+ else if(st=="Tamil Nadu"){var h=g*6,x=h<=21000?0:h<=30000?135:h<=45000?315:h<=60000?690:h<=75000?1025:1250;a=x*2;m=a/12}
+ if(a===undefined)a=m*12;
+ return {m:m,a:a};
+}
+function calc(c,P){
+ var b=Math.round(c*P.bp/100),h=Math.round(b*P.hp/100),bo=Math.round(b*P.bn/100);
+ var pw=P.cap?Math.min(b,25000):b,pf=Math.round(pw*0.12);
+ var g0=c-pf-P.ins,esi=g0/1.0325<=21000,er=esi?Math.ceil(g0*0.0325/1.0325):0;
+ var g=g0-er,sp=g-b-h-bo;
+ var ee=esi?Math.ceil(g*0.0075):0;
+ var p=P.ptov!==null?{m:P.ptov,a:P.ptov*12}:pt(P.loc,g);
+ return {ctc:c,basic:b,hra:h,bonus:bo,special:sp,gross:g,erPF:pf,erESI:er,ins:P.ins,eeESI:ee,eePF:pf,pt:p,esi:esi,net:g-ee-pf-p.m};
+}
+function params(){
+ var o=$("ptov").value;
+ return {bp:+$("bp").value,hp:+$("hp").value,bn:+$("bn").value,ins:+$("ins").value||0,cap:$("pfc").value=="1",loc:$("loc").value,ptov:o===""?null:+o};
+}
+function run(){
+ var A=+$("amt").value,P=params(),out=$("out");cands=[];cur=null;
+ if(!A||A<=0){out.innerHTML='<div class="msg bad">Enter an amount first.</div>';return}
+ if($("mode").value=="ctc"){var r=calc(Math.round(A),P);if(r.special<0){out.innerHTML='<div class="msg bad">Basic + HRA + Bonus exceed the available gross at this CTC. Lower the percentages.</div>';return}cur=r;show();return}
+ var best={e:null,n:null},lo=null,hi=null;
+ for(var c=1;c<=500000;c++){
+  var r=calc(c,P);if(r.special<0)continue;
+  var d=Math.abs(r.net-A);
+  if(r.net<=A)lo=r;else if(!hi)hi=r;
+  if(d<=1){var k=r.esi?"e":"n";if(!best[k]||d<Math.abs(best[k].net-A))best[k]=r}
+  if(r.net>A+50&&!r.esi&&c>60000)break;
+ }
+ if(best.e)cands.push(best.e);if(best.n)cands.push(best.n);
+ cands.sort(function(a,b){return a.ctc-b.ctc});
+ if(!cands.length){
+  var t="No CTC gives exactly ₹"+fmt(A)+" net because of the ESI threshold (gross ₹21,000). ";
+  if(lo&&hi)t+="Nearest options: ₹"+fmt(lo.net)+" net (CTC ₹"+fmt(lo.ctc)+") or ₹"+fmt(hi.net)+" net (CTC ₹"+fmt(hi.ctc)+").";
+  out.innerHTML='<div class="msg bad">'+t+'</div><div class="row">'+(lo?'<button class="s" onclick="pick(-1)">Use CTC '+fmt(lo.ctc)+'</button>':'')+(hi?'<button class="s" onclick="pick(-2)">Use CTC '+fmt(hi.ctc)+'</button>':'')+'</div>';
+  cands=[lo,hi].filter(Boolean);window._near=[lo,hi];return;
+ }
+ cur=cands[0];show();
+}
+function pick(i){
+ if(i<0){cur=window._near[i==-1?0:1]||window._near[0]}else cur=cands[i];show();
+}
+function row(l,m,a,t){return '<tr'+(t?' class="t"':'')+'><td>'+l+'</td><td>'+fmt(m)+'</td><td>'+fmt(a)+'</td></tr>'}
+function show(){
+ var r=cur,h='';
+ if(cands.length>1&&cands.some(function(x){return x.esi})&&cands.some(function(x){return !x.esi})){
+  h+='<div class="msg">Two valid answers exist for this take-home: '+cands.map(function(x,i){return '<button class="s" onclick="pick('+i+')">'+(x.esi?'ESI applicable':'No ESI')+' · CTC ₹'+fmt(x.ctc)+'</button>'}).join(' ')+'</div>';
+ }
+ h+='<div class="msg '+(r.esi?'':'ok')+'">'+(r.esi?'ESI applicable (gross ≤ ₹21,000).':'ESI not applicable (gross above ₹21,000).')+'</div>';
+ h+='<div class="wrap"><table><tr><th>Component</th><th>Monthly (₹)</th><th>Annual (₹)</th></tr>';
+ h+=row('CTC',r.ctc,r.ctc*12,1)+row('Basic',r.basic,r.basic*12)+row('HRA',r.hra,r.hra*12)+row('Bonus',r.bonus,r.bonus*12)+row('Special allowance',r.special,r.special*12)+row('Gross',r.gross,r.gross*12,1);
+ h+=row('Employer PF',r.erPF,r.erPF*12)+row('Employer ESI',r.erESI,r.erESI*12)+row('Insurance',r.ins,r.ins*12);
+ h+=row('Employee ESI',r.eeESI,r.eeESI*12)+row('Employee PF',r.eePF,r.eePF*12)+row('Professional Tax',r.pt.m,r.pt.a);
+ h+=row('Net take-home',r.net,r.gross*12-r.eeESI*12-r.eePF*12-r.pt.a,1)+'</table></div>';
+ h+='<div class="row"><button class="p" onclick="save()">Save to register</button><span id="sm" class="mu"></span></div>';
+ $("out").innerHTML=h;
+}
+function dmy(s){if(!s)return"";var p=s.split("-");return p[2]+"-"+p[1]+"-"+p[0]}
+function save(){
+ var r=cur;if(!r)return;
+ var netA=r.gross*12-r.eeESI*12-r.eePF*12-r.pt.a;
+ reg.push({date:dmy($("date").value),name:$("name").value,doj:dmy($("doj").value),loc:$("loc").value,desig:$("desig").value,
+  v:[r.ctc,r.ctc*12,r.basic,r.basic*12,r.hra,r.hra*12,r.bonus,r.bonus*12,r.special,r.special*12,r.gross,r.gross*12,r.eeESI,r.eeESI*12,r.eePF,r.eePF*12,r.pt.m,r.pt.a,r.net,netA]});
+ persist();render();$("sm").textContent="Saved to register.";
+}
+function persist(){try{localStorage.setItem("ctcreg",JSON.stringify(reg))}catch(e){}}
+var HEAD=["Date","Name","Date of join","Location","Designation","CTC monthly","CTC annual","Basic monthly","Basic annual","HRA monthly","HRA annual","Bonus monthly","Bonus annual","Special allowance monthly","Special allowance annual","Gross monthly","Gross annual","Employee ESI monthly","Employee ESI annual","Employee PF monthly","Employee PF annual","Professional Tax monthly","Professional Tax annual","Net take-home monthly","Net take-home annual"];
+function render(){
+ $("cnt").textContent=reg.length;
+ var h='<tr>'+HEAD.map(function(x){return'<th>'+x+'</th>'}).join('')+'<th></th></tr>';
+ reg.forEach(function(e,i){
+  h+='<tr><td>'+esc(e.date)+'</td><td>'+esc(e.name)+'</td><td>'+esc(e.doj)+'</td><td>'+esc(e.loc)+'</td><td>'+esc(e.desig)+'</td>'+e.v.map(function(x){return'<td>'+fmt(x)+'</td>'}).join('')+'<td><button class="s" onclick="del('+i+')">✕</button></td></tr>';
+ });
+ if(!reg.length)h+='<tr><td colspan="26" class="mu">No employees saved yet.</td></tr>';
+ $("reg").innerHTML=h;
+}
+function esc(s){return String(s).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]})}
+function del(i){reg.splice(i,1);persist();render()}
+var armed=false;
+function clearAll(){
+ if(!armed){armed=true;$("clr").textContent="Tap again to confirm";setTimeout(function(){armed=false;$("clr").textContent="Clear register"},3000);return}
+ reg=[];persist();render();armed=false;$("clr").textContent="Clear register";
+}
+function copyTsv(){
+ var t=HEAD.join("\t")+"\n"+reg.map(function(e){return [e.date,e.name,e.doj,e.loc,e.desig].concat(e.v).join("\t")}).join("\n");
+ var ok=function(){$("cm").textContent="Copied. Paste into Excel."};
+ try{navigator.clipboard.writeText(t).then(ok,fb)}catch(e){fb()}
+ function fb(){var a=document.createElement("textarea");a.value=t;document.body.appendChild(a);a.select();try{document.execCommand("copy");ok()}catch(e){$("cm").textContent="Copy blocked by the browser."}a.remove()}
+}
+function tab(n){$("v1").classList.toggle("hide",n!=1);$("v2").classList.toggle("hide",n!=2);$("t1").classList.toggle("on",n==1);$("t2").classList.toggle("on",n==2)}
+render();
+</script></main></body></html>
